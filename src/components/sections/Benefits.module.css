@@ -1,0 +1,44 @@
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+}
+
+.item {
+  padding: 28px 24px;
+}
+
+.item h3 {
+  margin-top: 18px;
+  font-size: 1.25rem;
+}
+
+.item p {
+  margin-top: 8px;
+  color: var(--text-muted);
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 720px;
+  margin: 28px auto 0;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--navy-50);
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.note svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--navy-700);
+}

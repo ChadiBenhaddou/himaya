@@ -1,0 +1,68 @@
+.steps {
+  display: grid;
+  gap: 14px;
+  counter-reset: step;
+}
+
+@media (min-width: 640px) {
+  .steps {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .steps {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.step {
+  position: relative;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.marker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--navy-900);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+
+.step h3 {
+  margin-top: 16px;
+  font-size: 1.1875rem;
+}
+
+.step p {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 36px;
+}
+
+@media (max-width: 479px) {
+  .cta :global(.btn) {
+    width: 100%;
+  }
+}
