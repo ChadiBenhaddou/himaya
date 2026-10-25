@@ -2,11 +2,11 @@
 
 Mobile-first Arabic/Darija (RTL) landing page that collects appointment requests for a 200 MAD
 home-router filtering service and saves each lead to Google Sheets.
-Built to be hosted on **Cloudflare Pages**.
+Built to be hosted on **Cloudflare** (Workers with static assets, or Pages).
 
 - **Stack:** Next.js 16 (static export) · React 19 · TypeScript · plain CSS Modules
 - **Runtime dependencies:** `next`, `react`, `react-dom`. No UI kit, icon pack or form library.
-- **Lead flow:** form → `POST /api/leads` (Cloudflare Pages Function) → Google Apps Script Web App → "Leads" sheet
+- **Lead flow:** form → `POST /api/leads` (Cloudflare Worker) → Google Apps Script Web App → "Leads" sheet
 
 ```
 src/                      the website (exported to plain HTML/CSS/JS in ./out)
@@ -14,7 +14,9 @@ src/                      the website (exported to plain HTML/CSS/JS in ./out)
   components/             layout/ · sections/ · form/ (LeadForm, Field) · ui/ (Icon, Logo, RouterIllustration)
   content/site.ts         ALL page copy, price and lists, edit text here
   lib/lead/               validation.ts (shared browser + server) · submit-lead.ts · api-types.ts
-functions/api/leads.ts    Cloudflare Pages Function → POST /api/leads (thin wrapper)
+wrangler.jsonc            Cloudflare Worker config: serves ./out, runs the Worker only for /api/*
+worker/index.ts           Worker entry → POST /api/leads (thin wrapper)
+functions/api/leads.ts    same endpoint for Cloudflare Pages (only used if you deploy with Pages)
 server/                   lead-handler.ts (spam checks, rate limit, validation) · sheets-webhook.ts · rate-limit.ts
 public/_headers           security + cache headers applied by Cloudflare
 apps-script/              Code.gs · appsscript.json · SETUP.md  (Google Sheets backend + guide)
@@ -41,7 +43,7 @@ error). To test the form, use the Cloudflare preview:
 
 ```bash
 cp .dev.vars.example .dev.vars    # fill in SHEETS_WEBHOOK_URL and SHEETS_WEBHOOK_SECRET
-npm run preview                   # builds, then runs Cloudflare's local runtime on http://localhost:8788
+npm run preview                   # builds, then runs Cloudflare's local runtime (wrangler dev) on http://localhost:8787
 ```
 
 ### Test the form without Google (optional)
@@ -49,70 +51,85 @@ npm run preview                   # builds, then runs Cloudflare's local runtime
 The emulator runs the real `apps-script/Code.gs` against an in-memory sheet:
 
 ```bash
-# terminal 1: any 32+ character secret
-SHEETS_WEBHOOK_SECRET=local-dev-secret-0123456789abcdef0123 npm run emulate:webhook
+# terminal 1: any 32+ character secret; port 8790 so it doesn't clash with wrangler's 8787
+EMULATOR_PORT=8790 SHEETS_WEBHOOK_SECRET=local-dev-secret-0123456789abcdef0123 npm run emulate:webhook
 ```
 ```bash
 # .dev.vars
-SHEETS_WEBHOOK_URL=http://localhost:8787/exec
+SHEETS_WEBHOOK_URL=http://localhost:8790/exec
 SHEETS_WEBHOOK_SECRET=local-dev-secret-0123456789abcdef0123
 ```
-Then `npm run preview`, submit the form at <http://localhost:8788>, and see stored rows at
-<http://localhost:8787/rows>. Plain `http://localhost` webhook URLs are accepted **only** for requests
+Then `npm run preview`, submit the form at <http://localhost:8787>, and see stored rows at
+<http://localhost:8790/rows>. Plain `http://localhost` webhook URLs are accepted **only** for requests
 made on localhost, so the deployed site always requires `https://`. The emulator does not touch
 Google Sheets, so finish with a real-sheet test.
 
 ---
 
-## Deploy to Cloudflare Pages
+## Deploy to Cloudflare
 
 ### 1. Google Sheet + Apps Script
 Follow **[apps-script/SETUP.md](apps-script/SETUP.md)**. You'll end up with a Web App URL and a secret.
 
-### 2. Create the Pages project (Git integration, recommended)
+### 2. Cloudflare Worker with Git (recommended; this is what the dashboard creates by default)
 1. Push this folder to a GitHub or GitLab repository. `.dev.vars` and `.env*` are git-ignored, so
    secrets aren't committed.
-2. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git** → pick the repo.
-3. Build settings:
+2. Cloudflare dashboard → **Workers & Pages → Create → Import a repository** → pick the repo.
+3. Settings (also editable later under the Worker → **Settings → Build**):
 
    | Setting | Value |
    |---|---|
-   | Framework preset | **Next.js (Static HTML Export)** |
+   | Project / Worker name | `himaya`. Must match `"name"` in [wrangler.jsonc](wrangler.jsonc) |
    | Build command | `npm run build` |
-   | Build output directory | `out` |
-   | Root directory | *(leave empty)* |
+   | Deploy command | `npx wrangler deploy` |
+   | Root directory | *(leave empty / `/`)* |
 
-   The `functions/` folder is detected automatically, and `.node-version` selects Node 22.
-4. Before the first deploy, open **Environment variables (advanced)** and add:
+   `wrangler deploy` reads `wrangler.jsonc`: it uploads `./out` as static files and `worker/index.ts`
+   as the API. `.node-version` selects Node 22.
+4. Add the variables:
 
-   | Name | Type | Value |
-   |---|---|---|
-   | `SHEETS_WEBHOOK_URL` | **Secret** (Encrypt) | `https://script.google.com/macros/s/…/exec` |
-   | `SHEETS_WEBHOOK_SECRET` | **Secret** (Encrypt) | 64-char secret from `setup()` |
-   | `NEXT_PUBLIC_SITE_URL` | Plain text | `https://your-domain.ma` (or the `*.pages.dev` URL for now) |
+   | Where in the dashboard | Name | Type | Value |
+   |---|---|---|---|
+   | Worker → **Settings → Variables and Secrets** | `SHEETS_WEBHOOK_URL` | **Secret** | `https://script.google.com/macros/s/…/exec` |
+   | Worker → **Settings → Variables and Secrets** | `SHEETS_WEBHOOK_SECRET` | **Secret** | 64-char secret from `setup()` |
+   | Worker → **Settings → Build → Variables and secrets** | `NEXT_PUBLIC_SITE_URL` | Text | `https://your-domain.ma` (or the `*.workers.dev` URL for now) |
 
-5. **Save and Deploy.** Your site goes live at `https://<project>.pages.dev`.
-6. Custom domain: project → **Custom domains → Set up a domain**.
+   The first two are runtime secrets for the API. `NEXT_PUBLIC_SITE_URL` is a *build* variable,
+   written into the page's SEO tags during `next build`.
+5. Trigger a deploy: push a commit, or go to **Deployments → ⋯ → Retry build**. The site goes live at
+   `https://himaya.<your-subdomain>.workers.dev`.
+6. Custom domain: Worker → **Settings → Domains & Routes → Add → Custom domain**.
 
-To change variables later: project → **Settings → Variables and Secrets**, then
-**Deployments → ⋯ → Retry deployment**. Changes only apply to new deployments.
+Secrets survive future deploys. After changing `NEXT_PUBLIC_SITE_URL`, run a new build.
 
-### Alternative: deploy from your computer (no Git)
+> If a build log shows *"Configuring project for Next.js with OpenNext"*, `wrangler.jsonc` is
+> missing from the repo. Commit it; this project must **not** use OpenNext (it's a static site).
+
+### Alternative A: deploy from your computer (no Git)
 ```bash
 npx wrangler login            # once, opens the browser
-npm run deploy                # builds and uploads ./out + functions/
+npm run deploy                # next build + wrangler deploy
 ```
-On the first run, wrangler asks for a project name. Then set the three variables in the dashboard
-as above and run `npm run deploy` again.
+Then add the two secrets in the dashboard as above (or `npx wrangler secret put SHEETS_WEBHOOK_URL`).
+
+### Alternative B: Cloudflare Pages
+Also supported. **Workers & Pages → Create → Pages tab → Import an existing Git repository**, preset
+**Next.js (Static HTML Export)**, build command `npm run build`, output directory `out`. Pages has
+no deploy command; it uses the `functions/` folder for the API and ignores `wrangler.jsonc`. Add
+the same three variables under **Settings → Variables and Secrets**. For local testing of the Pages
+variant use `npx next build && npx wrangler pages dev out`.
 
 ### Notes
-- Every push to the main branch redeploys automatically; other branches get preview URLs.
-- The free plan covers this easily (Pages Functions: 100,000 requests/day).
+- With Git, every push to the main branch redeploys automatically.
+- The free plan covers this easily: static files are free, and only form submissions run the
+  Worker (100,000 requests/day free).
 - If you turn on **Cloudflare Web Analytics**, its script is blocked by the strict Content Security
   Policy. Add `https://static.cloudflareinsights.com` to `script-src` and
   `https://cloudflareinsights.com` to `connect-src` in [public/_headers](public/_headers).
 - The rate limiter is in-memory per Cloudflare isolate, so it's a first line of defence. The Apps
   Script adds a per-phone limit and duplicate detection.
+- Worker logs (e.g. `[leads] Webhook rejected…`): Worker → **Observability / Logs**.
+
 
 ---
 

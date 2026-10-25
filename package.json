@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "preview": "next build && wrangler pages dev out --compatibility-date=2026-04-01",
-    "deploy": "next build && wrangler pages deploy out",
+    "preview": "next build && wrangler dev",
+    "deploy": "next build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "emulate:webhook": "node scripts/apps-script-emulator.mjs"
   },
