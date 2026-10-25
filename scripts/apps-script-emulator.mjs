@@ -82,10 +82,18 @@ const spreadsheet = {
     return s;
   },
   setSpreadsheetTimeZone: () => {},
+  getUrl: () => "https://docs.google.com/spreadsheets/d/EMULATED/edit",
 };
 
 const props = new Map([["WEBHOOK_SECRET", SECRET]]);
+// EMULATE_NOTIFY=1 turns on fake Telegram + email channels; EMULATE_NOTIFY=fail makes Telegram reject.
+if (process.env.EMULATE_NOTIFY) {
+  props.set("TELEGRAM_BOT_TOKEN", "123456:FAKE-TOKEN");
+  props.set("TELEGRAM_CHAT_ID", "987654321");
+  props.set("NOTIFY_EMAIL", "owner@example.com");
+}
 const cache = new Map();
+const notifications = []; // outgoing Telegram/email calls, recorded instead of sent
 
 function formatDate(date, tz, fmt) {
   const parts = Object.fromEntries(
@@ -117,6 +125,15 @@ const context = vm.createContext({
     }),
   },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+  UrlFetchApp: {
+    fetch: (url, opts = {}) => {
+      const fail = process.env.EMULATE_NOTIFY === "fail";
+      notifications.push({ channel: "telegram", url: url.replace(/bot[^/]+/, "bot<token>"), payload: opts.payload ? JSON.parse(opts.payload) : null, simulatedFailure: fail });
+      const body = fail ? { ok: false, description: "Bad Request: chat not found" } : { ok: true, result: [] };
+      return { getResponseCode: () => (fail ? 400 : 200), getContentText: () => JSON.stringify(body) };
+    },
+  },
+  MailApp: { sendEmail: (msg) => void notifications.push({ channel: "email", ...msg }) },
   Utilities: { getUuid: () => randomUUID(), formatDate },
   ContentService: {
     MimeType: { JSON: "application/json" },
@@ -153,6 +170,11 @@ http
     if (req.method === "GET" && url.pathname === "/rows") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(sheets.get("Leads").rows, null, 2));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/notifications") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(notifications, null, 2));
       return;
     }
     res.writeHead(404).end();

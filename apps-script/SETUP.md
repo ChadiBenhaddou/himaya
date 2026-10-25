@@ -109,6 +109,49 @@ Store these two values as **secrets** (never prefix them with `NEXT_PUBLIC_`):
    Status **New**.
 3. Follow the full checklist in the main [README](../README.md#end-to-end-test-checklist).
 
+## Phone notifications for new leads (optional)
+
+Each new lead can trigger a **Telegram message** (instant push, recommended) and/or an **email**.
+Notifications are sent after the row is saved. If one fails, the lead is still saved and the
+visitor still sees the success message.
+
+### Telegram (about 3 minutes)
+
+1. Install Telegram on your phone. Open a chat with **@BotFather** (the official bot, with a blue
+   check) → send `/newbot` → choose a name (e.g. `Himaya Leads`) and a username ending in `bot`
+   (e.g. `himaya_leads_bot`). BotFather replies with a **token** like `7123456789:AAH…`.
+   Keep it private: anyone with it can send messages as your bot.
+2. Open your new bot (BotFather gives you the link) and press **Start**.
+3. In Apps Script: **Project Settings (⚙) → Script properties → Add script property**:
+   `TELEGRAM_BOT_TOKEN` = the token → **Save script properties**.
+4. In the editor, run **`findTelegramChatId()`**. It finds your chat and saves `TELEGRAM_CHAT_ID`
+   automatically. Google asks for one more permission ("connect to an external service"): allow it.
+5. Run **`testNotification()`**. A sample message should arrive on your phone within seconds.
+
+Each message shows the name, a phone number you can tap to call, a **WhatsApp** link, city,
+provider, preferred date and time, notes, and a link to open the sheet.
+
+> **Team:** to notify several people, create a Telegram group, add the bot to it, send a message in
+> the group, and run `findTelegramChatId()` again. If it lists several chats, copy the group's ID
+> (it starts with `-`) into `TELEGRAM_CHAT_ID`.
+
+### Email
+
+Add the script property `NOTIFY_EMAIL` = your address (several addresses: separate them with commas),
+then run `testNotification()` and allow the "send email" permission. To get a push notification,
+turn on notifications in the Gmail app. If emails sent from your own account to the same address
+don't trigger a notification, use a different address.
+Limit: about 100 emails/day on a free Google account.
+
+### Required after adding notifications
+
+- If you replaced `appsscript.json` with the repo version (step 2.3), paste the **updated**
+  [`appsscript.json`](./appsscript.json). It adds the two new permissions.
+- After pasting the new `Code.gs`, **redeploy**: **Deploy → Manage deployments → ✏️ Edit →
+  Version: New version → Deploy.** The URL stays the same; nothing changes in Cloudflare.
+
+To turn notifications off, delete the script properties.
+
 ## Rotating the secret
 
 Run `rotateWebhookSecret()`, copy the new value into `SHEETS_WEBHOOK_SECRET` in Cloudflare and
@@ -130,6 +173,9 @@ retry the latest deployment. Until you do, the form returns an error and nothing
   submission takes one execution of roughly 1 second.
 
 ## What is stored, and what is not
+
+If notifications are enabled, the same lead details are also sent to your Telegram chat or
+email inbox, and nowhere else.
 
 Stored: only the 12 columns above. **Not stored:** IP addresses, user agents, router or Wi-Fi
 passwords (the form never asks for them and warns users not to type them), or anything else.

@@ -93,7 +93,7 @@ export const MESSAGES = {
   consentRequired: "خاصك توافق باش نقدرو نتواصلو معاك.",
 } as const;
 
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩]/g;
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -117,8 +117,8 @@ export function cleanMultiline(value: unknown): string {
 /** Converts Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digits to 0-9. */
 export function toWesternDigits(value: string): string {
   return value
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
 }
 
 /**
@@ -127,7 +127,7 @@ export function toWesternDigits(value: string): string {
  * Valid national numbers start with 5 (fixed), 6/7 (mobile) or 8 (fixed/VoIP) after the leading 0.
  */
 export function normalizeMoroccanPhone(raw: unknown): string | null {
-  let s = toWesternDigits(asString(raw)).replace(/[\s().\-‎‏‪-‮]/g, "");
+  let s = toWesternDigits(asString(raw)).replace(/[\s().\-\u200E\u200F\u202A-\u202E]/g, "");
   if (s.startsWith("00212")) s = "+212" + s.slice(5);
   else if (s.startsWith("212")) s = "+212" + s.slice(3);
   else if (s.startsWith("0")) s = "+212" + s.slice(1);

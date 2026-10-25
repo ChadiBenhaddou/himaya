@@ -196,6 +196,7 @@ Run on the **deployed** site (`*.pages.dev` or your domain), with a phone and a 
 - [ ] Double-clicking submit creates **one** row only.
 - [ ] Put `=1+1` in Notes. The sheet shows the text `=1+1`, not `2`.
 - [ ] Visit with `?utm_source=test`. The Source column shows `website | utm_source=test`.
+- [ ] If notifications are set up: a Telegram message (or email) arrives within seconds, and its WhatsApp link opens a chat with the customer's number.
 
 **Failure handling**
 - [ ] Temporarily change `SHEETS_WEBHOOK_SECRET` in Cloudflare and retry the deployment. The form shows the technical-error message, typed data stays in the fields, and no row is added. Then restore the correct secret and redeploy.

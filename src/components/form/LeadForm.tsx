@@ -162,7 +162,7 @@ export function LeadForm() {
           )}
         </Field>
 
-        <Field id="lead-phone" label="رقم الهاتف" required error={show("phone")} hint="مثال: 0612345678 ولا ‎+212612345678">
+        <Field id="lead-phone" label="رقم الهاتف" required error={show("phone")} hint={<>مثال: <bdi dir="ltr">0612345678</bdi> ولا <bdi dir="ltr">+212612345678</bdi></>}>
           {(a11y) => (
             <input
               {...a11y}

@@ -3,9 +3,10 @@
  *
  * Himaya — lead intake webhook for Google Sheets.
  *
- * Flow:  landing page form → /api/leads (Cloudflare Pages Function) → this Web App → "Leads" sheet
+ * Flow:  landing page form → /api/leads (Cloudflare Worker) → this Web App → "Leads" sheet
+ *                                                                  └→ Telegram / email notification (optional)
  *
- * The Web App URL and WEBHOOK_SECRET are only known to the Cloudflare Pages Function.
+ * The Web App URL and WEBHOOK_SECRET are only known to the Cloudflare Worker.
  * Browsers never call this script directly. See SETUP.md for deployment.
  *
  * Functions you can run from the editor:
@@ -13,6 +14,8 @@
  *   showWebhookSecret()   – print the current secret to the execution log
  *   rotateWebhookSecret() – replace the secret (update your hosting env var afterwards)
  *   testWebhook()         – insert one TEST row through the same code path as real requests
+ *   findTelegramChatId()  – after messaging your bot, finds and saves TELEGRAM_CHAT_ID
+ *   testNotification()    – send a sample notification (no row is written)
  */
 
 var CONFIG = {
@@ -106,19 +109,23 @@ function doPost(e) {
     if (!lock.tryLock(10000)) return json_({ ok: false, error: 'busy' });
 
     var leadId;
+    var source = cleanLine_(body.source).slice(0, CONFIG.LIMITS.sourceMax) || 'website';
     try {
       // Re-check inside the lock in case an identical request just finished.
       previous = cache.get(subKey);
       if (previous) return json_({ ok: true, leadId: previous, duplicate: true });
 
       leadId = generateLeadId_();
-      appendLead_(getLeadsSheet_(), leadId, lead, cleanLine_(body.source).slice(0, CONFIG.LIMITS.sourceMax) || 'website');
+      appendLead_(getLeadsSheet_(), leadId, lead, source);
 
       cache.put(subKey, leadId, CONFIG.IDEMPOTENCY_TTL_SECONDS);
       cache.put(phoneKey, String(phoneCount + 1), 3600);
     } finally {
       lock.releaseLock();
     }
+
+    // The row is saved; notifications are best-effort and never fail the request.
+    notifyNewLead_(leadId, lead, source);
 
     return json_({ ok: true, leadId: leadId });
   } catch (err) {
@@ -185,9 +192,9 @@ function validateLead_(input) {
 
 function normalizePhone_(raw) {
   var s = String(raw == null ? '' : raw)
-    .replace(/[٠-٩]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); })
-    .replace(/[۰-۹]/g, function (d) { return String(d.charCodeAt(0) - 0x06F0); })
-    .replace(/[\s().\-‎‏‪-‮]/g, '');
+    .replace(/[\u0660-\u0669]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); })
+    .replace(/[\u06F0-\u06F9]/g, function (d) { return String(d.charCodeAt(0) - 0x06F0); })
+    .replace(/[\s().\-\u200E\u200F\u202A-\u202E]/g, '');
   if (s.indexOf('00212') === 0) s = '+212' + s.slice(5);
   else if (s.indexOf('212') === 0) s = '+212' + s.slice(3);
   else if (s.indexOf('0') === 0) s = '+212' + s.slice(1);
@@ -207,7 +214,7 @@ function checkDate_(iso) {
   return null;
 }
 
-var CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩]/g;
+var CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function cleanLine_(value) {
   return typeof value === 'string' ? value.replace(CONTROL_CHARS, '').replace(/\s+/g, ' ').trim() : '';
@@ -230,7 +237,7 @@ function cleanMultiline_(value) {
  */
 function safeCell_(value) {
   var s = String(value == null ? '' : value);
-  return /^[=+\-@＝＋－＠\t\r]/.test(s) ? "'" + s : s;
+  return /^[=+\-@\uFF1D\uFF0B\uFF0D\uFF20\t\r]/.test(s) ? "'" + s : s;
 }
 
 function safeEqual_(a, b) {
@@ -281,6 +288,160 @@ function appendLead_(sheet, leadId, lead, source) {
   sheet.getRange(rowIndex, COL.createdAt).setNumberFormat('yyyy-mm-dd hh:mm');
   sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
   sheet.getRange(rowIndex, COL.status).setDataValidation(statusRule_());
+}
+
+/* ───────────────────────── Notifications (optional) ───────────────────────── */
+/*
+ * Configure in Project Settings (⚙) → Script properties:
+ *   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID → instant Telegram message (recommended)
+ *   NOTIFY_EMAIL                          → email alert (one address, or several separated by commas)
+ * Leave them empty to disable. See SETUP.md → "Phone notifications".
+ */
+
+function notifyNewLead_(leadId, lead, source) {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('TELEGRAM_BOT_TOKEN');
+  var chatId = props.getProperty('TELEGRAM_CHAT_ID');
+  var email = props.getProperty('NOTIFY_EMAIL');
+  if (!(token && chatId) && !email) return;
+
+  var sheetUrl = '';
+  try {
+    sheetUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl();
+  } catch (err) { /* link is optional */ }
+
+  if (token && chatId) {
+    try {
+      sendTelegram_(token, chatId, telegramText_(leadId, lead, source, sheetUrl));
+    } catch (err) {
+      console.error('Telegram notification failed: ' + (err && err.message ? err.message : err));
+    }
+  }
+
+  if (email) {
+    try {
+      MailApp.sendEmail({
+        to: email,
+        name: 'Himaya – طلبات جديدة',
+        subject: 'طلب جديد: ' + lead.fullName + ' – ' + lead.city + ' (' + leadId + ')',
+        body: emailText_(leadId, lead, source, sheetUrl)
+      });
+    } catch (err) {
+      console.error('Email notification failed: ' + (err && err.message ? err.message : err));
+    }
+  }
+}
+
+function sendTelegram_(token, chatId, html) {
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      chat_id: chatId,
+      text: html,
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true }
+    }),
+    muteHttpExceptions: true // so errors never print the URL (which contains the token)
+  });
+  if (res.getResponseCode() !== 200) {
+    var description = '';
+    try { description = JSON.parse(res.getContentText()).description || ''; } catch (e) {}
+    throw new Error('HTTP ' + res.getResponseCode() + ' ' + description);
+  }
+}
+
+function telegramText_(leadId, lead, source, sheetUrl) {
+  var waNumber = lead.phone.replace(/^\+/, '');
+  var lines = [
+    '🔔 <b>طلب جديد</b> · <code>' + esc_(leadId) + '</code>',
+    '',
+    '👤 ' + esc_(lead.fullName),
+    '📞 ' + esc_(lead.phone) + '  ·  <a href="https://wa.me/' + waNumber + '">WhatsApp</a>',
+    '📍 ' + esc_(lead.city)
+  ];
+  if (lead.provider) lines.push('🌐 ' + esc_(lead.provider));
+  if (lead.preferredDate || lead.preferredTime) {
+    lines.push('📅 ' + esc_([lead.preferredDate, lead.preferredTime].filter(String).join(' · ')));
+  }
+  if (lead.notes) lines.push('📝 ' + esc_(lead.notes));
+  if (source && source !== 'website') lines.push('🏷 ' + esc_(source));
+  if (sheetUrl) lines.push('', '<a href="' + esc_(sheetUrl) + '">📊 فتح الشيت</a>');
+  return lines.join('\n');
+}
+
+function emailText_(leadId, lead, source, sheetUrl) {
+  return [
+    'طلب جديد من الموقع',
+    '',
+    'رقم الطلب: ' + leadId,
+    'الاسم: ' + lead.fullName,
+    'الهاتف: ' + lead.phone + '   (WhatsApp: https://wa.me/' + lead.phone.replace(/^\+/, '') + ')',
+    'المدينة: ' + lead.city,
+    'مزود الإنترنت: ' + (lead.provider || '—'),
+    'التاريخ المفضل: ' + (lead.preferredDate || '—'),
+    'الوقت المفضل: ' + (lead.preferredTime || '—'),
+    'ملاحظات: ' + (lead.notes || '—'),
+    'المصدر: ' + source,
+    '',
+    sheetUrl ? 'الشيت: ' + sheetUrl : ''
+  ].join('\n');
+}
+
+function esc_(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Message your bot once in Telegram, then run this: it finds your chat ID and saves it. */
+function findTelegramChatId() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('TELEGRAM_BOT_TOKEN');
+  if (!token) {
+    Logger.log('Add TELEGRAM_BOT_TOKEN in Project Settings → Script properties first.');
+    return;
+  }
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates', { muteHttpExceptions: true });
+  var data = JSON.parse(res.getContentText());
+  if (!data.ok) {
+    Logger.log('Telegram error: ' + (data.description || res.getResponseCode()) + ' — check the bot token.');
+    return;
+  }
+  var chats = {};
+  data.result.forEach(function (update) {
+    var msg = update.message || update.channel_post || update.my_chat_member;
+    if (msg && msg.chat) chats[msg.chat.id] = msg.chat.title || msg.chat.first_name || msg.chat.username || '';
+  });
+  var ids = Object.keys(chats);
+  if (!ids.length) {
+    Logger.log('No messages found. Open your bot in Telegram, press Start (or send "hi"), then run this again.');
+    return;
+  }
+  if (ids.length === 1) {
+    props.setProperty('TELEGRAM_CHAT_ID', ids[0]);
+    Logger.log('Saved TELEGRAM_CHAT_ID = ' + ids[0] + ' (' + chats[ids[0]] + '). Now run testNotification().');
+    return;
+  }
+  Logger.log('Several chats found — copy the right ID into TELEGRAM_CHAT_ID manually:');
+  ids.forEach(function (id) { Logger.log('  ' + id + '  ' + chats[id]); });
+}
+
+/** Sends a sample notification to every configured channel. Writes nothing to the sheet. */
+function testNotification() {
+  var props = PropertiesService.getScriptProperties();
+  if (!(props.getProperty('TELEGRAM_BOT_TOKEN') && props.getProperty('TELEGRAM_CHAT_ID')) && !props.getProperty('NOTIFY_EMAIL')) {
+    Logger.log('No notification channel configured. Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID and/or NOTIFY_EMAIL.');
+    return;
+  }
+  notifyNewLead_('HM-TEST-000000', {
+    fullName: 'TEST — تجربة الإشعار',
+    phone: '+212600000000',
+    city: 'الدار البيضاء',
+    provider: PROVIDERS.unknown,
+    preferredDate: '',
+    preferredTime: TIME_SLOTS.evening,
+    notes: 'هادي غير تجربة، ما كاين حتى طلب.'
+  }, 'apps-script-test');
+  Logger.log('Test notification sent. If nothing arrived, check Executions for errors.');
 }
 
 /* ───────────────────────── Setup & admin helpers ───────────────────────── */
