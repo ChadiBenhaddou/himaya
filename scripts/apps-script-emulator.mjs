@@ -5,12 +5,12 @@
  * SpreadsheetApp, CacheService, LockService, PropertiesService, Utilities and
  * ContentService, and mimics the Web App's POST → 302 → GET redirect.
  *
- * It does NOT write to Google Sheets. It only proves that the Next.js proxy and
+ * It does NOT write to Google Sheets. It only proves that the Pages Function and
  * the script logic work together. Always finish with a test against a real sheet.
  *
  * Usage:
  *   SHEETS_WEBHOOK_SECRET=<32+ chars> node scripts/apps-script-emulator.mjs
- *   then in .env.local:  SHEETS_WEBHOOK_URL=http://localhost:8787/exec
+ *   then in .dev.vars:  SHEETS_WEBHOOK_URL=http://localhost:8787/exec
  *   GET http://localhost:8787/rows shows the rows written so far.
  */
 import http from "node:http";
@@ -159,5 +159,5 @@ http
   })
   .listen(PORT, () => {
     console.log(`Apps Script emulator on http://localhost:${PORT}/exec`);
-    if (!process.env.SHEETS_WEBHOOK_SECRET) console.log(`Generated secret (put in .env.local): ${SECRET}`);
+    if (!process.env.SHEETS_WEBHOOK_SECRET) console.log(`Generated secret (put in .dev.vars): ${SECRET}`);
   });

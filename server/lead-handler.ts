@@ -1,10 +1,12 @@
-import type { LeadApiErrorCode, LeadApiResponse } from "@/lib/lead/api-types";
-import { validateLead, type FieldErrors } from "@/lib/lead/validation";
-import { clientIp, rateLimit } from "@/lib/server/rate-limit";
-import { forwardLeadToSheet } from "@/lib/server/sheets-webhook";
+import type { LeadApiErrorCode, LeadApiResponse } from "../src/lib/lead/api-types";
+import { validateLead, type FieldErrors } from "../src/lib/lead/validation";
+import { clientIp, rateLimit } from "./rate-limit";
+import { forwardLeadToSheet, type WebhookEnv } from "./sheets-webhook";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+/**
+ * POST /api/leads — framework-agnostic (standard Request → Response), so it
+ * runs as a Cloudflare Pages Function. Wired up in functions/api/leads.ts.
+ */
 
 const MAX_BODY_BYTES = 8 * 1024;
 const MIN_FILL_TIME_MS = 2_500;
@@ -32,9 +34,8 @@ function fail(error: LeadApiErrorCode, status: number, fieldErrors?: FieldErrors
 function sameOrigin(req: Request): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return false;
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   try {
-    return new URL(origin).host === host;
+    return new URL(origin).host === new URL(req.url).host;
   } catch {
     return false;
   }
@@ -54,7 +55,7 @@ function buildSource(utm: unknown): string {
   return parts.join(" | ");
 }
 
-export async function POST(req: Request) {
+export async function handleLeadRequest(req: Request, env: WebhookEnv): Promise<Response> {
   if (!sameOrigin(req)) return fail("forbidden", 403);
 
   if (!req.headers.get("content-type")?.includes("application/json")) {
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   const raw = await req.text();
-  if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) return fail("payload_too_large", 413);
+  if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) return fail("payload_too_large", 413);
 
   let body: Record<string, unknown>;
   try {
@@ -91,9 +92,11 @@ export async function POST(req: Request) {
   const result = validateLead(body);
   if (!result.ok) return fail("validation_error", 400, result.errors);
 
-  const forwarded = await forwardLeadToSheet(result.data, {
+  const { hostname } = new URL(req.url);
+  const forwarded = await forwardLeadToSheet(env, result.data, {
     submissionId,
     source: buildSource(body.utm),
+    isLocalRequest: hostname === "localhost" || hostname === "127.0.0.1",
   });
 
   if (forwarded.ok) return json({ ok: true, leadId: forwarded.leadId }, 201);

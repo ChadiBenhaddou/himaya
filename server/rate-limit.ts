@@ -1,8 +1,6 @@
-import "server-only";
-
 /**
  * Best-effort fixed-window rate limiter kept in memory.
- * On serverless hosts each instance has its own memory, so this is a first
+ * On Cloudflare each Worker isolate has its own memory, so this is a first
  * line of defence only; the Apps Script backend adds a per-phone limit too.
  */
 const buckets = new Map<string, { count: number; resetAt: number }>();
@@ -23,7 +21,10 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
 }
 
 export function clientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return headers.get("x-real-ip") ?? "unknown";
+  return (
+    headers.get("cf-connecting-ip") ??
+    headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    headers.get("x-real-ip") ??
+    "unknown"
+  );
 }

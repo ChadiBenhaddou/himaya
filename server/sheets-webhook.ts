@@ -1,10 +1,14 @@
-import "server-only";
-import type { ValidLead } from "@/lib/lead/validation";
+import type { ValidLead } from "../src/lib/lead/validation";
 
 /**
  * Server-side client for the Google Apps Script Web App.
- * URL and secret come from environment variables and never reach the browser.
+ * URL and secret come from Cloudflare environment variables and never reach the browser.
  */
+
+export interface WebhookEnv {
+  SHEETS_WEBHOOK_URL?: string;
+  SHEETS_WEBHOOK_SECRET?: string;
+}
 
 export type ForwardResult =
   | { ok: true; leadId: string }
@@ -16,21 +20,22 @@ interface AppsScriptResponse {
   error?: string;
 }
 
-function readConfig(): { url: string; secret: string } | null {
-  const url = process.env.SHEETS_WEBHOOK_URL?.trim();
-  const secret = process.env.SHEETS_WEBHOOK_SECRET?.trim();
+function readConfig(env: WebhookEnv, isLocalRequest: boolean): { url: string; secret: string } | null {
+  const url = env.SHEETS_WEBHOOK_URL?.trim();
+  const secret = env.SHEETS_WEBHOOK_SECRET?.trim();
   if (!url || !secret || secret.length < 32) return null;
-  // Plain http is only accepted for the local emulator during development.
-  const isLocalDev = process.env.NODE_ENV !== "production" && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
-  if (!url.startsWith("https://") && !isLocalDev) return null;
+  // Plain http is only accepted for the local emulator, and only for requests made on localhost.
+  const isLocalUrl = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
+  if (!url.startsWith("https://") && !(isLocalUrl && isLocalRequest)) return null;
   return { url, secret };
 }
 
 export async function forwardLeadToSheet(
+  env: WebhookEnv,
   lead: ValidLead,
-  meta: { submissionId: string; source: string },
+  meta: { submissionId: string; source: string; isLocalRequest: boolean },
 ): Promise<ForwardResult> {
-  const config = readConfig();
+  const config = readConfig(env, meta.isLocalRequest);
   if (!config) {
     console.error("[leads] SHEETS_WEBHOOK_URL / SHEETS_WEBHOOK_SECRET missing or invalid.");
     return { ok: false, reason: "not_configured" };
@@ -50,7 +55,6 @@ export async function forwardLeadToSheet(
         lead,
       }),
       redirect: "follow",
-      cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {

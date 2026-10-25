@@ -1,0 +1,6 @@
+# Local secrets for `npm run preview` (Cloudflare's local runtime reads .dev.vars).
+# Copy to .dev.vars — it is git-ignored. In production, set these in the
+# Cloudflare dashboard: Pages project → Settings → Variables and Secrets.
+
+SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/XXXXXXXXXXXX/exec
+SHEETS_WEBHOOK_SECRET=

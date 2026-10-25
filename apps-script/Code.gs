@@ -3,9 +3,9 @@
  *
  * Himaya — lead intake webhook for Google Sheets.
  *
- * Flow:  landing page form → /api/leads (Next.js server) → this Web App → "Leads" sheet
+ * Flow:  landing page form → /api/leads (Cloudflare Pages Function) → this Web App → "Leads" sheet
  *
- * The Web App URL and WEBHOOK_SECRET are only known to the Next.js server.
+ * The Web App URL and WEBHOOK_SECRET are only known to the Cloudflare Pages Function.
  * Browsers never call this script directly. See SETUP.md for deployment.
  *
  * Functions you can run from the editor:

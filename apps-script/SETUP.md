@@ -3,12 +3,12 @@
 This connects the landing-page form to a Google Sheet:
 
 ```
-Visitor's browser ──► /api/leads (your Next.js server) ──► Apps Script Web App ──► "Leads" sheet
-                       holds URL + secret (env vars)        checks secret, validates, writes row
+Visitor's browser ──► /api/leads (Cloudflare Pages Function) ──► Apps Script Web App ──► "Leads" sheet
+                       holds URL + secret (encrypted secrets)      checks secret, validates, writes row
 ```
 
 The browser only ever talks to your own site (`/api/leads`). The Apps Script URL and the
-shared secret live in server environment variables, so they never appear in page source.
+shared secret are stored as Cloudflare secrets, so they never appear in page source.
 
 ---
 
@@ -72,7 +72,7 @@ keeps your data. It refuses to run if a "Leads" sheet exists with different head
    - **Who has access:** **Anyone**
 4. **Deploy** → copy the **Web app URL** (`https://script.google.com/macros/s/…/exec`).
 
-> **Why "Anyone"?** Your Next.js server calls the script without a Google login, so the Web App
+> **Why "Anyone"?** Your Cloudflare Function calls the script without a Google login, so the Web App
 > must accept anonymous requests. It is still protected:
 > - the URL is only stored on your server, never sent to browsers;
 > - every request must carry the 64-character `WEBHOOK_SECRET` (compared in constant time);
@@ -87,16 +87,16 @@ keeps your data. It refuses to run if a "Leads" sheet exists with different head
 
 ## 5. Configure your website
 
-Set these **server-side** environment variables (never prefix them with `NEXT_PUBLIC_`):
+Store these two values as **secrets** (never prefix them with `NEXT_PUBLIC_`):
 
 | Variable                | Value                                   |
 |-------------------------|-----------------------------------------|
 | `SHEETS_WEBHOOK_URL`    | Web app URL from step 4                 |
 | `SHEETS_WEBHOOK_SECRET` | Secret from step 3                      |
 
-- **Local:** put them in `.env.local` (git-ignored) and restart `npm run dev`.
-- **Vercel:** Project → Settings → Environment Variables → add both for *Production*
-  (and *Preview* if wanted) → **Redeploy**.
+- **Cloudflare Pages:** project → **Settings → Variables and Secrets → Add** → type **Secret**
+  for both (Production, and Preview if wanted) → then **Deployments → ⋯ → Retry deployment**.
+- **Local:** put them in `.dev.vars` (git-ignored) and run `npm run preview`.
 
 ## 6. Test it
 
@@ -109,20 +109,21 @@ Set these **server-side** environment variables (never prefix them with `NEXT_PU
 
 ## Rotating the secret
 
-Run `rotateWebhookSecret()`, copy the new value into `SHEETS_WEBHOOK_SECRET` on your host and
-redeploy the site. Until you do, the form returns an error and nothing is lost silently.
+Run `rotateWebhookSecret()`, copy the new value into `SHEETS_WEBHOOK_SECRET` in Cloudflare and
+retry the latest deployment. Until you do, the form returns an error and nothing is lost silently.
 
 ## CORS and deployment notes
 
-- **CORS doesn't apply.** Browsers never call Apps Script directly; only your server does.
+- **CORS doesn't apply.** Browsers never call Apps Script directly; only your Cloudflare Function does.
   (Apps Script Web Apps can't send CORS headers for JSON POSTs, which is why a direct
   browser→Apps Script setup is unreliable and would expose the URL.)
 - **Redirects:** Apps Script answers a POST with `302 → script.googleusercontent.com`. The
   server code follows the redirect and reads the JSON. If you get `upstream_error` and the
   server log says *"non-JSON"*, the URL is wrong, the deployment isn't set to "Anyone", or
-  the script threw an error (check **Executions** in the Apps Script sidebar).
+  the script threw an error (check **Executions** in the Apps Script sidebar). On Cloudflare, see
+  these logs under the Pages project → **Deployments → (latest) → Functions → Real-time logs**.
 - **Status codes:** Apps Script always returns HTTP 200, so the `ok` / `error` fields in the JSON
-  are what count. The Next.js route maps them to proper HTTP codes for the browser.
+  are what count. The Cloudflare Function maps them to proper HTTP codes for the browser.
 - **Quotas:** a consumer Google account allows ample Web App executions for a lead form; each
   submission takes one execution of roughly 1 second.
 
