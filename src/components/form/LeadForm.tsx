@@ -14,7 +14,6 @@ import {
   type LeadFormValues,
 } from "@/lib/lead/validation";
 import { newSubmissionId, readUtmParams, submitLead } from "@/lib/lead/submit-lead";
-import { trackLead } from "@/lib/analytics/meta-pixel";
 import { Icon } from "@/components/ui/Icon";
 import { Field } from "./Field";
 import styles from "./LeadForm.module.css";
@@ -105,10 +104,11 @@ export function LeadForm() {
     inFlight.current = false;
 
     if (response.ok) {
-      // leadId is null when the server silently drops a bot submission, so bots never count as leads.
-      if (response.leadId) trackLead(response.leadId);
       setLeadId(response.leadId);
       setStatus("success");
+      // Real leads go to the thank-you page, which fires the Meta "Lead" event.
+      // leadId is null when the server silently drops a bot, so bots stay here and never count.
+      if (response.leadId) window.location.assign(`/merci?ref=${encodeURIComponent(response.leadId)}`);
       return;
     }
 
