@@ -14,6 +14,7 @@ import {
   type LeadFormValues,
 } from "@/lib/lead/validation";
 import { newSubmissionId, readUtmParams, submitLead } from "@/lib/lead/submit-lead";
+import { trackLead } from "@/lib/analytics/meta-pixel";
 import { Icon } from "@/components/ui/Icon";
 import { Field } from "./Field";
 import styles from "./LeadForm.module.css";
@@ -104,6 +105,8 @@ export function LeadForm() {
     inFlight.current = false;
 
     if (response.ok) {
+      // leadId is null when the server silently drops a bot submission, so bots never count as leads.
+      if (response.leadId) trackLead(response.leadId);
       setLeadId(response.leadId);
       setStatus("success");
       return;

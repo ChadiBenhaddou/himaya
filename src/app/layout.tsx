@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import { SITE } from "@/content/site";
+import { MetaPixel } from "@/components/analytics/MetaPixel";
 import "./globals.css";
 
 // Self-hosted at build time by next/font — no request to Google from the visitor.
@@ -46,7 +47,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ar-MA" dir="rtl" className={plexArabic.variable}>
       {/* Extensions like Grammarly add attributes to <body> before hydration; ignore those. */}
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <MetaPixel />
+      </body>
     </html>
   );
 }
