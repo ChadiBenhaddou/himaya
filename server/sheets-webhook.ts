@@ -20,13 +20,18 @@ interface AppsScriptResponse {
   error?: string;
 }
 
-function readConfig(env: WebhookEnv, isLocalRequest: boolean): { url: string; secret: string } | null {
+/** Returns the config, or a human-readable reason it's unusable (never includes the values). */
+function readConfig(env: WebhookEnv, isLocalRequest: boolean): { url: string; secret: string } | { problem: string } {
   const url = env.SHEETS_WEBHOOK_URL?.trim();
   const secret = env.SHEETS_WEBHOOK_SECRET?.trim();
-  if (!url || !secret || secret.length < 32) return null;
+  if (!url) return { problem: "SHEETS_WEBHOOK_URL is not set on this Worker" };
+  if (!secret) return { problem: "SHEETS_WEBHOOK_SECRET is not set on this Worker" };
+  if (secret.length < 32) return { problem: `SHEETS_WEBHOOK_SECRET is too short (${secret.length} chars; the one from setup() has 64)` };
   // Plain http is only accepted for the local emulator, and only for requests made on localhost.
   const isLocalUrl = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
-  if (!url.startsWith("https://") && !(isLocalUrl && isLocalRequest)) return null;
+  if (!url.startsWith("https://") && !(isLocalUrl && isLocalRequest)) {
+    return { problem: "SHEETS_WEBHOOK_URL must start with https:// (use the Web app URL ending in /exec)" };
+  }
   return { url, secret };
 }
 
@@ -36,8 +41,8 @@ export async function forwardLeadToSheet(
   meta: { submissionId: string; source: string; isLocalRequest: boolean },
 ): Promise<ForwardResult> {
   const config = readConfig(env, meta.isLocalRequest);
-  if (!config) {
-    console.error("[leads] SHEETS_WEBHOOK_URL / SHEETS_WEBHOOK_SECRET missing or invalid.");
+  if ("problem" in config) {
+    console.error(`[leads] Not configured: ${config.problem}.`);
     return { ok: false, reason: "not_configured" };
   }
 
